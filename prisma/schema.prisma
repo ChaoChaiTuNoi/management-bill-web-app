@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model Product {
+  id           String             @id @default(uuid()) @db.Uuid
+  name         String
+  categoryId   String             @db.Uuid
+  createdAt    DateTime           @default(now())
+  category     Category           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  factoryBills FactoryBill[]
+  storeTxs     StoreTransaction[]
+
+  @@index([categoryId])
+  @@unique([name, categoryId])
+}
+
+model FactoryBill {
+  id           String   @id @default(uuid()) @db.Uuid
+  productId    String   @db.Uuid
+  pricePerUnit Decimal  @db.Decimal(12, 2)
+  totalPrice   Decimal  @db.Decimal(12, 2)
+  weightKg     Decimal  @db.Decimal(12, 3)
+  billDate     DateTime
+  createdAt    DateTime @default(now())
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId, billDate])
+}
+
+model StoreTransaction {
+  id              String          @id @default(uuid()) @db.Uuid
+  productId       String          @db.Uuid
+  pricePerUnit    Decimal         @db.Decimal(12, 2)
+  totalPrice      Decimal         @db.Decimal(12, 2)
+  weightKg        Decimal         @db.Decimal(12, 3)
+  transactionType TransactionType
+  billDate        DateTime
+  createdAt       DateTime        @default(now())
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId, billDate])
+  @@index([transactionType, billDate])
+}
+
+model TaxRecord {
+  id        String   @id @default(uuid()) @db.Uuid
+  taxType   String
+  billName  String
+  amount    Decimal  @db.Decimal(12, 2)
+  taxDate   DateTime
+  createdAt DateTime @default(now())
+
+  @@index([taxDate])
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
