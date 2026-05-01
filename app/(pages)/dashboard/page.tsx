@@ -22,6 +22,18 @@ type TransactionFilter = "ALL" | "INCOME" | "EXPENSE" | "TAX";
 type FactoryBill = { billDate: string; totalPrice: string };
 type StoreTransaction = { billDate: string; totalPrice: string; transactionType: "INCOME" | "EXPENSE" };
 type TaxRecord = { taxDate: string; amount: string };
+type StoreTransactionListResponse = {
+  items: StoreTransaction[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+type SummaryMetrics = {
+  factoryIncome: number;
+  storeIncome: number;
+  totalExpense: number;
+  totalTax: number;
+};
 
 const PRESET_LABELS: Record<PresetKey, string> = {
   "1D": "1 วัน",
@@ -85,6 +97,7 @@ export default function DashboardPage() {
   const [taxRecords, setTaxRecords] = useState<TaxRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [previousSummary, setPreviousSummary] = useState<SummaryMetrics | null>(null);
   const openDatePicker = (event: { currentTarget: HTMLInputElement }) => {
     try {
       event.currentTarget.showPicker?.();
@@ -105,6 +118,33 @@ export default function DashboardPage() {
       setLoading(true);
       setError("");
       try {
+        const normalizeStoreTransactions = (data: unknown): StoreTransaction[] =>
+          Array.isArray(data) ? (data as StoreTransaction[]) : ((data as StoreTransactionListResponse).items ?? []);
+        const sumMetrics = (factoryData: FactoryBill[], storeData: StoreTransaction[], taxData: TaxRecord[]): SummaryMetrics => ({
+          factoryIncome: factoryData.reduce((sum, item) => sum + Number(item.totalPrice || 0), 0),
+          storeIncome: storeData
+            .filter((item) => item.transactionType === "INCOME")
+            .reduce((sum, item) => sum + Number(item.totalPrice || 0), 0),
+          totalExpense: storeData
+            .filter((item) => item.transactionType === "EXPENSE")
+            .reduce((sum, item) => sum + Number(item.totalPrice || 0), 0),
+          totalTax: taxData.reduce((sum, item) => sum + Number(item.amount || 0), 0)
+        });
+
+        const currentStart = new Date(`${startDate}T00:00:00.000Z`);
+        const currentEnd = new Date(`${endDate}T23:59:59.999Z`);
+        const dayMs = 1000 * 60 * 60 * 24;
+        const dayCount = Math.max(1, Math.floor((currentEnd.getTime() - currentStart.getTime()) / dayMs) + 1);
+        const previousEnd = new Date(currentStart);
+        previousEnd.setDate(previousEnd.getDate() - 1);
+        const previousStart = new Date(previousEnd);
+        previousStart.setDate(previousStart.getDate() - (dayCount - 1));
+
+        const previousParams = new URLSearchParams({
+          startDate: `${formatDateInput(previousStart)}T00:00:00.000Z`,
+          endDate: `${formatDateInput(previousEnd)}T23:59:59.999Z`,
+          limit: "100"
+        });
         const params = new URLSearchParams({
           startDate: `${startDate}T00:00:00.000Z`,
           endDate: `${endDate}T23:59:59.999Z`,
@@ -126,10 +166,25 @@ export default function DashboardPage() {
           storeRes.json(),
           taxRes.json()
         ]);
+        const [previousFactoryRes, previousStoreRes, previousTaxRes] = await Promise.all([
+          fetch(`/api/factory-bills?${previousParams.toString()}`),
+          fetch(`/api/store-transactions?${previousParams.toString()}`),
+          fetch(`/api/tax-records?${previousParams.toString()}`)
+        ]);
+        if (!previousFactoryRes.ok || !previousStoreRes.ok || !previousTaxRes.ok) {
+          throw new Error("โหลดข้อมูลช่วงเปรียบเทียบไม่สำเร็จ");
+        }
+        const [previousFactoryData, previousStoreDataRaw, previousTaxData] = await Promise.all([
+          previousFactoryRes.json(),
+          previousStoreRes.json(),
+          previousTaxRes.json()
+        ]);
 
         setFactoryBills(factoryData);
-        setStoreTransactions(storeData);
+        const normalizedStoreTransactions = normalizeStoreTransactions(storeData);
+        setStoreTransactions(normalizedStoreTransactions);
         setTaxRecords(taxData);
+        setPreviousSummary(sumMetrics(previousFactoryData, normalizeStoreTransactions(previousStoreDataRaw), previousTaxData));
       } catch {
         setError("ไม่สามารถโหลดข้อมูลแดชบอร์ดได้");
       } finally {
@@ -142,7 +197,7 @@ export default function DashboardPage() {
     }
   }, [startDate, endDate]);
 
-  const summary = useMemo(() => {
+  const summary = useMemo<SummaryMetrics>(() => {
     const factoryIncome = factoryBills.reduce((sum, item) => sum + Number(item.totalPrice || 0), 0);
     const storeIncome = storeTransactions
       .filter((item) => item.transactionType === "INCOME")
@@ -159,6 +214,22 @@ export default function DashboardPage() {
       totalTax
     };
   }, [factoryBills, storeTransactions, taxRecords]);
+
+  const cards = [
+    { title: "รายรับจากโรงงานรวม", value: summary.factoryIncome, previous: previousSummary?.factoryIncome ?? null },
+    { title: "รายรับจากร้านค้ารวม", value: summary.storeIncome, previous: previousSummary?.storeIncome ?? null },
+    { title: "รายจ่ายรวม", value: summary.totalExpense, previous: previousSummary?.totalExpense ?? null },
+    { title: "ภาษีรวม", value: summary.totalTax, previous: previousSummary?.totalTax ?? null }
+  ];
+
+  const topInsight = useMemo(() => {
+    if (!previousSummary) return "ยังไม่มีข้อมูลช่วงก่อนหน้าสำหรับเปรียบเทียบ";
+    const netNow = summary.factoryIncome + summary.storeIncome - summary.totalExpense - summary.totalTax;
+    const netPrev = previousSummary.factoryIncome + previousSummary.storeIncome - previousSummary.totalExpense - previousSummary.totalTax;
+    const diff = netNow - netPrev;
+    const direction = diff >= 0 ? "เพิ่มขึ้น" : "ลดลง";
+    return `กำไรสุทธิ ${direction} ${Math.abs(diff).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท เทียบช่วงก่อนหน้า`;
+  }, [previousSummary, summary]);
 
   const chartData = useMemo(() => {
     const start = new Date(`${startDate}T00:00:00`);
@@ -196,21 +267,15 @@ export default function DashboardPage() {
     }));
   }, [factoryBills, storeTransactions, taxRecords, startDate, endDate]);
 
-  const cards = [
-    { title: "รายรับจากโรงงานรวม", value: summary.factoryIncome },
-    { title: "รายรับจากร้านค้ารวม", value: summary.storeIncome },
-    { title: "รายจ่ายรวม", value: summary.totalExpense },
-    { title: "ภาษีรวม", value: summary.totalTax }
-  ];
-
   return (
     <div className="space-y-5 sm:space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold sm:text-3xl">สรุปแดชบอร์ด</h1>
-        <p className="text-sm text-muted-foreground">ติดตามรายรับ รายจ่าย และภาษีในช่วงเวลาที่ต้องการ</p>
+      <div className="page-hero">
+        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Business Overview</p>
+        <h1 className="mt-2 text-2xl font-bold sm:text-3xl">สรุปแดชบอร์ด</h1>
+        <p className="mt-1 text-sm text-muted-foreground">ติดตามรายรับ รายจ่าย และภาษีในช่วงเวลาที่ต้องการแบบเรียลไทม์</p>
       </div>
 
-      <Card>
+      <Card className="border-white/80">
         <CardHeader>
           <CardTitle className="text-base">ตัวกรองข้อมูล</CardTitle>
         </CardHeader>
@@ -267,20 +332,33 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
+      <Card className="border-white/80">
+        <CardContent className="pt-6">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Insight</p>
+          <p className="mt-2 text-sm text-slate-700">{topInsight}</p>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((card) => (
-          <Card key={card.title}>
-            <CardHeader>
-              <CardTitle className="text-sm">{card.title}</CardTitle>
+          <Card key={card.title} className="relative overflow-hidden border-white/80">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-slate-600">{card.title}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-lg font-semibold sm:text-xl">{Number(card.value).toFixed(2)} บาท</p>
+              <p className="text-lg font-semibold sm:text-xl">{Number(card.value).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</p>
+              {card.previous !== null ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  เทียบช่วงก่อนหน้า: {card.value - card.previous >= 0 ? "+" : "-"}
+                  {Math.abs(card.value - card.previous).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท
+                </p>
+              ) : null}
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <Card>
+      <Card className="border-white/80">
         <CardHeader>
           <CardTitle>กราฟรายรับ / รายจ่าย / ภาษี</CardTitle>
         </CardHeader>

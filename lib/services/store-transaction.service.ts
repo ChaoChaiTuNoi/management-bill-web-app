@@ -22,6 +22,9 @@ export class StoreTransactionService {
     endDate?: Date;
     transactionType?: TransactionType;
     categoryId?: string;
+    search?: string;
+    sortBy?: "billDate" | "totalPrice" | "productName";
+    sortOrder?: "asc" | "desc";
     limit?: number;
     offset?: number;
   }) {

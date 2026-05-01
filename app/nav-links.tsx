@@ -18,10 +18,10 @@ export function NavLinks({ menu }: { menu: MenuItem[] }) {
             key={item.href}
             href={item.href}
             className={cn(
-              "shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium transition",
+              "shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium transition-all duration-200",
               isActive
-                ? "border-blue-600 bg-blue-50 text-blue-700"
-                : "border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50 hover:text-black"
+                ? "border-blue-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm"
+                : "border-white/70 bg-white/60 text-slate-700 hover:-translate-y-0.5 hover:border-slate-200 hover:bg-white hover:text-slate-900"
             )}
             aria-current={isActive ? "page" : undefined}
           >

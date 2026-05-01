@@ -141,32 +141,54 @@ export default function FactoryBillsPage() {
     }
   }
 
+  function formatCurrency(value: string | number) {
+    return Number(value || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   return (
     <div className="space-y-5 sm:space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold sm:text-3xl">บิลโรงงาน</h1>
-        <p className="text-sm text-muted-foreground">บันทึกรายการบิลโรงงานและตรวจสอบข้อมูลล่าสุด</p>
+      <div className="page-hero">
+        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Factory Billing</p>
+        <h1 className="mt-2 text-2xl font-bold sm:text-3xl">บิลโรงงาน</h1>
+        <p className="mt-1 text-sm text-muted-foreground">บันทึกรายการบิลโรงงานและตรวจสอบข้อมูลล่าสุด</p>
       </div>
-      <Card>
+      <Card className="border-white/80">
         <CardHeader><CardTitle>เพิ่มบิลโรงงาน</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="factory-product-id">สินค้า *</Label>
               <Controller control={form.control} name="productId" render={({ field }) => <ProductCombobox id="factory-product-id" value={field.value} products={products} loading={productsLoading} onChange={(id) => form.setValue("productId", id, { shouldDirty: true, shouldValidate: true })} />} />
+              {form.formState.errors.productId ? <p className="text-xs text-rose-600">{form.formState.errors.productId.message}</p> : null}
             </div>
-            <div className="space-y-2"><Label htmlFor="factory-price-per-unit">ราคาต่อหน่วย (บาท) *</Label><Input id="factory-price-per-unit" type="number" step="0.01" {...form.register("pricePerUnit")} /></div>
-            <div className="space-y-2"><Label htmlFor="factory-weight-kg">น้ำหนัก (กก.) *</Label><Input id="factory-weight-kg" type="number" step="0.001" {...form.register("weightKg")} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="factory-price-per-unit">ราคาต่อหน่วย (บาท) *</Label>
+              <Input id="factory-price-per-unit" type="number" step="0.01" {...form.register("pricePerUnit")} />
+              {form.formState.errors.pricePerUnit ? <p className="text-xs text-rose-600">{form.formState.errors.pricePerUnit.message}</p> : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="factory-weight-kg">น้ำหนัก (กก.) *</Label>
+              <Input id="factory-weight-kg" type="number" step="0.001" {...form.register("weightKg")} />
+              {form.formState.errors.weightKg ? <p className="text-xs text-rose-600">{form.formState.errors.weightKg.message}</p> : null}
+            </div>
             <div className="space-y-2"><Label htmlFor="factory-total-price">ราคารวม (บาท) *</Label><Input id="factory-total-price" type="number" step="0.01" disabled readOnly {...form.register("totalPrice")} /></div>
-            <div className="space-y-2"><Label htmlFor="factory-bill-date">วันที่บิล *</Label><Input id="factory-bill-date" type="date" onClick={openDatePicker} {...form.register("billDate")} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="factory-bill-date">วันที่บิล *</Label>
+              <Input id="factory-bill-date" type="date" onClick={openDatePicker} {...form.register("billDate")} />
+              {form.formState.errors.billDate ? <p className="text-xs text-rose-600">{form.formState.errors.billDate.message}</p> : null}
+            </div>
             <div className="flex items-end"><Button type="submit" className="w-full md:w-auto" disabled={isSubmitting}>{isSubmitting ? "กำลังบันทึก..." : "บันทึก"}</Button></div>
           </form>
-          {message ? <p className="mt-3 text-sm text-muted-foreground">{message}</p> : null}
-          {errorMessage ? <p className="mt-2 text-sm text-red-600">{errorMessage}</p> : null}
+          {message ? (
+            <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p>
+          ) : null}
+          {errorMessage ? (
+            <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errorMessage}</p>
+          ) : null}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-white/80">
         <CardHeader><CardTitle>รายการบิลโรงงานล่าสุด</CardTitle></CardHeader>
         <CardContent className="px-0 sm:px-6 sm:pt-0">
           <Table>
@@ -179,7 +201,7 @@ export default function FactoryBillsPage() {
               ) : null}
               {items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{item.product?.name ?? "-"}</TableCell><TableCell>{item.pricePerUnit}</TableCell><TableCell>{item.totalPrice}</TableCell><TableCell>{item.weightKg}</TableCell><TableCell>{new Date(item.billDate).toLocaleDateString()}</TableCell>
+                  <TableCell className="font-medium">{item.product?.name ?? "-"}</TableCell><TableCell>{formatCurrency(item.pricePerUnit)}</TableCell><TableCell className="font-semibold">{formatCurrency(item.totalPrice)}</TableCell><TableCell>{Number(item.weightKg).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</TableCell><TableCell>{new Date(item.billDate).toLocaleDateString("th-TH")}</TableCell>
                   <TableCell><div className="flex gap-2"><Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(item)}>แก้ไข</Button><Button type="button" size="sm" variant="destructive" onClick={() => setDeletingItem(item)}>ลบ</Button></div></TableCell>
                 </TableRow>
               ))}

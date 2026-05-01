@@ -116,13 +116,18 @@ export default function TaxPage() {
     }
   }
 
+  function formatCurrency(value: string | number) {
+    return Number(value || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   return (
     <div className="space-y-5 sm:space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold sm:text-3xl">บันทึกภาษี</h1>
-        <p className="text-sm text-muted-foreground">จัดเก็บข้อมูลภาษีเพื่อใช้สรุปยอดและวิเคราะห์รายจ่าย</p>
+      <div className="page-hero">
+        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Tax Management</p>
+        <h1 className="mt-2 text-2xl font-bold sm:text-3xl">บันทึกภาษี</h1>
+        <p className="mt-1 text-sm text-muted-foreground">จัดเก็บข้อมูลภาษีเพื่อใช้สรุปยอดและวิเคราะห์รายจ่าย</p>
       </div>
-      <Card>
+      <Card className="border-white/80">
         <CardHeader>
           <CardTitle>เพิ่มรายการภาษี</CardTitle>
         </CardHeader>
@@ -162,33 +167,41 @@ export default function TaxPage() {
                 ))}
               </select>
               <p className="text-xs text-muted-foreground">ตอนนี้ใช้รายการมาตรฐานชั่วคราว ก่อนมี Master Data ภาษี</p>
+              {form.formState.errors.taxType ? <p className="text-xs text-rose-600">{form.formState.errors.taxType.message}</p> : null}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="tax-bill-name">ชื่อบิล *</Label>
               <Input id="tax-bill-name" placeholder="กรอกชื่อบิล" {...form.register("billName")} />
+              {form.formState.errors.billName ? <p className="text-xs text-rose-600">{form.formState.errors.billName.message}</p> : null}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="tax-amount">จำนวนเงิน (บาท) *</Label>
               <Input id="tax-amount" type="number" step="0.01" placeholder="กรอกจำนวนเงิน" {...form.register("amount")} />
+              {form.formState.errors.amount ? <p className="text-xs text-rose-600">{form.formState.errors.amount.message}</p> : null}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="tax-date">วันที่ภาษี *</Label>
               <Input id="tax-date" type="date" onClick={openDatePicker} {...form.register("taxDate")} />
+              {form.formState.errors.taxDate ? <p className="text-xs text-rose-600">{form.formState.errors.taxDate.message}</p> : null}
             </div>
 
             <div className="flex items-end">
               <Button type="submit" className="w-full md:w-auto" disabled={isSubmitting}>{isSubmitting ? "กำลังบันทึก..." : "บันทึก"}</Button>
             </div>
           </form>
-          {message ? <p className="mt-3 text-sm text-muted-foreground">{message}</p> : null}
-          {errorMessage ? <p className="mt-2 text-sm text-red-600">{errorMessage}</p> : null}
+          {message ? (
+            <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p>
+          ) : null}
+          {errorMessage ? (
+            <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errorMessage}</p>
+          ) : null}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-white/80">
         <CardHeader>
           <CardTitle>รายการภาษีล่าสุด</CardTitle>
         </CardHeader>
@@ -211,10 +224,10 @@ export default function TaxPage() {
               ) : null}
               {items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{item.taxType}</TableCell>
+                  <TableCell className="font-medium">{item.taxType}</TableCell>
                   <TableCell>{item.billName}</TableCell>
-                  <TableCell>{item.amount}</TableCell>
-                  <TableCell>{new Date(item.taxDate).toLocaleDateString()}</TableCell>
+                  <TableCell className="font-semibold">{formatCurrency(item.amount)}</TableCell>
+                  <TableCell>{new Date(item.taxDate).toLocaleDateString("th-TH")}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
                       <Button

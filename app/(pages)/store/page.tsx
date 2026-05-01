@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -32,9 +33,21 @@ type StoreItem = {
   billDate: string;
   product?: { id: string; name: string };
 };
+type StoreListResponse = {
+  items: StoreItem[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+type SortBy = "billDate" | "totalPrice" | "productName";
+type SortOrder = "asc" | "desc";
 
-export default function StorePage() {
+function StorePageContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<StoreItem[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
   const [products, setProducts] = useState<Array<{ id: string; name: string }>>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [productsLoading, setProductsLoading] = useState(false);
@@ -45,6 +58,17 @@ export default function StorePage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [editingItem, setEditingItem] = useState<StoreItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<StoreItem | null>(null);
+  const [queryText, setQueryText] = useState(searchParams.get("search") ?? "");
+  const [searchInput, setSearchInput] = useState(searchParams.get("search") ?? "");
+  const [selectedType, setSelectedType] = useState<"ALL" | "INCOME" | "EXPENSE">(
+    (searchParams.get("transactionType") as "INCOME" | "EXPENSE" | null) ?? "ALL"
+  );
+  const [startDate, setStartDate] = useState(searchParams.get("startDate") ?? "");
+  const [endDate, setEndDate] = useState(searchParams.get("endDate") ?? "");
+  const [sortBy, setSortBy] = useState<SortBy>((searchParams.get("sortBy") as SortBy | null) ?? "billDate");
+  const [sortOrder, setSortOrder] = useState<SortOrder>((searchParams.get("sortOrder") as SortOrder | null) ?? "desc");
+  const [page, setPage] = useState(Math.max(Number(searchParams.get("page") ?? "1"), 1));
+  const pageSize = 10;
   const [editValues, setEditValues] = useState<EditStoreValues>({
     productId: "",
     transactionType: "INCOME",
@@ -59,20 +83,32 @@ export default function StorePage() {
     defaultValues: { productId: "", transactionType: "INCOME" }
   });
 
-  async function loadItems() {
+  const loadItems = useCallback(async () => {
     setItemsLoading(true);
     try {
-      const response = await fetch("/api/store-transactions");
+      const params = new URLSearchParams();
+      params.set("limit", String(pageSize));
+      params.set("offset", String((page - 1) * pageSize));
+      if (queryText.trim()) params.set("search", queryText.trim());
+      if (selectedType !== "ALL") params.set("transactionType", selectedType);
+      if (startDate) params.set("startDate", startDate);
+      if (endDate) params.set("endDate", endDate);
+      params.set("sortBy", sortBy);
+      params.set("sortOrder", sortOrder);
+
+      const response = await fetch(`/api/store-transactions?${params.toString()}`);
       if (!response.ok) throw new Error("โหลดรายการร้านค้าไม่สำเร็จ");
-      setItems(await response.json());
+      const data = (await response.json()) as StoreListResponse;
+      setItems(data.items);
+      setTotalItems(data.total);
     } catch {
       setErrorMessage("ไม่สามารถโหลดรายการร้านค้าได้");
     } finally {
       setItemsLoading(false);
     }
-  }
+  }, [endDate, page, queryText, selectedType, sortBy, sortOrder, startDate]);
 
-  async function loadProducts() {
+  const loadProducts = useCallback(async () => {
     setProductsLoading(true);
     try {
       const response = await fetch("/api/master-data/products");
@@ -80,12 +116,28 @@ export default function StorePage() {
     } finally {
       setProductsLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadItems();
+  }, [loadItems]);
+
+  useEffect(() => {
     loadProducts();
-  }, []);
+  }, [loadProducts]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (queryText.trim()) params.set("search", queryText.trim());
+    if (selectedType !== "ALL") params.set("transactionType", selectedType);
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    params.set("sortBy", sortBy);
+    params.set("sortOrder", sortOrder);
+    params.set("page", String(page));
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }, [queryText, selectedType, startDate, endDate, sortBy, sortOrder, page, pathname, router]);
 
   const pricePerUnit = form.watch("pricePerUnit");
   const weightKg = form.watch("weightKg");
@@ -154,13 +206,57 @@ export default function StorePage() {
     }
   }
 
+  const totalPages = Math.max(Math.ceil(totalItems / pageSize), 1);
+  const rangeStart = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, totalItems);
+  const pageSummary = useMemo(() => {
+    return items.reduce(
+      (acc, item) => {
+        const value = Number(item.totalPrice || 0);
+        if (item.transactionType === "INCOME") acc.income += value;
+        if (item.transactionType === "EXPENSE") acc.expense += value;
+        return acc;
+      },
+      { income: 0, expense: 0 }
+    );
+  }, [items]);
+
+  function applyFilters() {
+    setErrorMessage("");
+    setPage(1);
+    setQueryText(searchInput.trim());
+  }
+
+  function clearFilters() {
+    setSearchInput("");
+    setQueryText("");
+    setSelectedType("ALL");
+    setStartDate("");
+    setEndDate("");
+    setSortBy("billDate");
+    setSortOrder("desc");
+    setPage(1);
+  }
+
+  function formatCurrency(value: number) {
+    return value.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function getTypePillClass(type: "INCOME" | "EXPENSE") {
+    if (type === "INCOME") {
+      return "inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700";
+    }
+    return "inline-flex rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-700";
+  }
+
   return (
     <div className="space-y-5 sm:space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold sm:text-3xl">รายการร้านค้า</h1>
-        <p className="text-sm text-muted-foreground">จัดการรายรับและรายจ่ายของร้านค้าแบบง่ายและรวดเร็ว</p>
+      <div className="page-hero">
+        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Store Transactions</p>
+        <h1 className="mt-2 text-2xl font-bold sm:text-3xl">รายการร้านค้า</h1>
+        <p className="mt-1 text-sm text-muted-foreground">จัดการรายรับและรายจ่ายของร้านค้าแบบง่ายและรวดเร็ว</p>
       </div>
-      <Card>
+      <Card className="border-white/80">
         <CardHeader><CardTitle>เพิ่มรายการร้านค้า</CardTitle></CardHeader>
         <CardContent>
           <form
@@ -188,6 +284,7 @@ export default function StorePage() {
               <Controller control={form.control} name="productId" render={({ field }) => (
                 <ProductCombobox id="store-product-id" value={field.value} products={products} loading={productsLoading} onChange={(id) => form.setValue("productId", id, { shouldDirty: true, shouldValidate: true })} />
               )} />
+              {form.formState.errors.productId ? <p className="text-xs text-rose-600">{form.formState.errors.productId.message}</p> : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="store-transaction-type">ประเภทรายการ *</Label>
@@ -195,35 +292,193 @@ export default function StorePage() {
                 <option value="INCOME">รายรับ</option>
                 <option value="EXPENSE">รายจ่าย</option>
               </select>
+              {form.formState.errors.transactionType ? <p className="text-xs text-rose-600">{form.formState.errors.transactionType.message}</p> : null}
             </div>
-            <div className="space-y-2"><Label htmlFor="store-price-per-unit">ราคาต่อหน่วย (บาท) *</Label><Input id="store-price-per-unit" type="number" step="0.1" {...form.register("pricePerUnit")} /></div>
-            <div className="space-y-2"><Label htmlFor="store-weight-kg">น้ำหนัก (กก.) *</Label><Input id="store-weight-kg" type="number" step="0.1" {...form.register("weightKg")} /></div>
-            <div className="space-y-2"><Label htmlFor="store-total-price">ราคารวม (บาท) *</Label><Input id="store-total-price" type="number" step="0.01" disabled readOnly {...form.register("totalPrice")} /></div>
-            <div className="space-y-2"><Label htmlFor="store-transaction-date">วันที่ทำรายการ *</Label><Input id="store-transaction-date" type="date" onClick={openDatePicker} {...form.register("billDate")} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="store-price-per-unit">ราคาต่อหน่วย (บาท) *</Label>
+              <Input id="store-price-per-unit" type="number" step="0.1" {...form.register("pricePerUnit")} />
+              {form.formState.errors.pricePerUnit ? <p className="text-xs text-rose-600">{form.formState.errors.pricePerUnit.message}</p> : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="store-weight-kg">น้ำหนัก (กก.) *</Label>
+              <Input id="store-weight-kg" type="number" step="0.1" {...form.register("weightKg")} />
+              {form.formState.errors.weightKg ? <p className="text-xs text-rose-600">{form.formState.errors.weightKg.message}</p> : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="store-total-price">ราคารวม (บาท) *</Label>
+              <Input id="store-total-price" type="number" step="0.01" disabled readOnly {...form.register("totalPrice")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="store-transaction-date">วันที่ทำรายการ *</Label>
+              <Input id="store-transaction-date" type="date" onClick={openDatePicker} {...form.register("billDate")} />
+              {form.formState.errors.billDate ? <p className="text-xs text-rose-600">{form.formState.errors.billDate.message}</p> : null}
+            </div>
             <div className="flex items-end"><Button type="submit" className="w-full md:w-auto" disabled={isSubmitting}>{isSubmitting ? "กำลังบันทึก..." : "บันทึก"}</Button></div>
           </form>
-          {message ? <p className="mt-3 text-sm text-muted-foreground">{message}</p> : null}
-          {errorMessage ? <p className="mt-2 text-sm text-red-600">{errorMessage}</p> : null}
+          {message ? (
+            <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p>
+          ) : null}
+          {errorMessage ? (
+            <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errorMessage}</p>
+          ) : null}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader><CardTitle>รายการล่าสุด</CardTitle></CardHeader>
+      <Card className="border-white/80">
+        <CardHeader><CardTitle>ค้นหาและกรองรายการ</CardTitle></CardHeader>
+        <CardContent>
+          <div className="sticky top-[84px] z-10 rounded-xl border border-white/80 bg-white/90 p-3 shadow-sm backdrop-blur-sm">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="store-search">ค้นหาสินค้าหรือหมวดหมู่</Label>
+              <Input
+                id="store-search"
+                placeholder="พิมพ์ชื่อสินค้า/หมวดหมู่"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="store-filter-type">ประเภทรายการ</Label>
+              <select
+                id="store-filter-type"
+                className="block h-10 w-full rounded-md border border-input px-3"
+                value={selectedType}
+                onChange={(event) => {
+                  setSelectedType(event.target.value as "ALL" | "INCOME" | "EXPENSE");
+                  setPage(1);
+                }}
+              >
+                <option value="ALL">ทั้งหมด</option>
+                <option value="INCOME">รายรับ</option>
+                <option value="EXPENSE">รายจ่าย</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="store-start-date">วันที่เริ่มต้น</Label>
+              <Input
+                id="store-start-date"
+                type="date"
+                value={startDate}
+                onClick={openDatePicker}
+                onChange={(event) => {
+                  setStartDate(event.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="store-end-date">วันที่สิ้นสุด</Label>
+              <Input
+                id="store-end-date"
+                type="date"
+                value={endDate}
+                onClick={openDatePicker}
+                onChange={(event) => {
+                  setEndDate(event.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="store-sort-by">เรียงตาม</Label>
+              <select
+                id="store-sort-by"
+                value={sortBy}
+                onChange={(event) => {
+                  setSortBy(event.target.value as SortBy);
+                  setPage(1);
+                }}
+              >
+                <option value="billDate">วันที่ทำรายการ</option>
+                <option value="totalPrice">ราคารวม</option>
+                <option value="productName">ชื่อสินค้า</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="store-sort-order">ลำดับ</Label>
+              <select
+                id="store-sort-order"
+                value={sortOrder}
+                onChange={(event) => {
+                  setSortOrder(event.target.value as SortOrder);
+                  setPage(1);
+                }}
+              >
+                <option value="desc">มากไปน้อย / ล่าสุด</option>
+                <option value="asc">น้อยไปมาก / เก่าสุด</option>
+              </select>
+            </div>
+            <div className="flex items-end gap-2 md:col-span-5">
+              <Button type="button" onClick={applyFilters}>
+                ค้นหา
+              </Button>
+              <Button type="button" variant="outline" onClick={clearFilters}>
+                ล้างตัวกรอง
+              </Button>
+            </div>
+          </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-xs text-muted-foreground">รายรับ (หน้านี้)</p>
+            <p className="mt-1 text-xl font-semibold text-emerald-600">{formatCurrency(pageSummary.income)} บาท</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-xs text-muted-foreground">รายจ่าย (หน้านี้)</p>
+            <p className="mt-1 text-xl font-semibold text-rose-600">{formatCurrency(pageSummary.expense)} บาท</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-xs text-muted-foreground">ยอดสุทธิ (หน้านี้)</p>
+            <p className="mt-1 text-xl font-semibold">
+              {formatCurrency(pageSummary.income - pageSummary.expense)} บาท
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-white/80">
+        <CardHeader>
+          <CardTitle>รายการล่าสุด</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            แสดง {rangeStart}-{rangeEnd} จากทั้งหมด {totalItems} รายการ
+          </p>
+        </CardHeader>
         <CardContent className="px-0 sm:px-6 sm:pt-0">
+          <div className="overflow-x-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>สินค้า</TableHead><TableHead>ประเภท</TableHead><TableHead>ราคารวม(บาท)</TableHead><TableHead>วันที่</TableHead><TableHead>จัดการ</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>สินค้า</TableHead><TableHead>ประเภท</TableHead><TableHead className="text-right">ราคารวม(บาท)</TableHead><TableHead>วันที่</TableHead><TableHead>จัดการ</TableHead></TableRow></TableHeader>
             <TableBody>
               {itemsLoading ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-muted-foreground">กำลังโหลดข้อมูล...</TableCell>
                 </TableRow>
               ) : null}
+              {!itemsLoading && items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    ไม่พบรายการตามเงื่อนไขที่เลือก
+                  </TableCell>
+                </TableRow>
+              ) : null}
               {items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{item.product?.name ?? "-"}</TableCell>
-                  <TableCell>{item.transactionType === "INCOME" ? "รายรับ" : "รายจ่าย"}</TableCell>
-                  <TableCell>{item.totalPrice}</TableCell>
-                  <TableCell>{new Date(item.billDate).toLocaleDateString()}</TableCell>
+                  <TableCell className="font-medium">{item.product?.name ?? "-"}</TableCell>
+                  <TableCell>
+                    <span className={getTypePillClass(item.transactionType)}>
+                      {item.transactionType === "INCOME" ? "รายรับ" : "รายจ่าย"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right font-semibold">{formatCurrency(Number(item.totalPrice || 0))}</TableCell>
+                  <TableCell>{new Date(item.billDate).toLocaleDateString("th-TH")}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
                       <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(item)}>แก้ไข</Button>
@@ -234,6 +489,18 @@ export default function StorePage() {
               ))}
             </TableBody>
           </Table>
+          </div>
+          <div className="mt-4 flex items-center justify-between px-4 sm:px-0">
+            <Button type="button" variant="outline" disabled={page <= 1 || itemsLoading} onClick={() => setPage((prev) => Math.max(prev - 1, 1))}>
+              ก่อนหน้า
+            </Button>
+            <p className="text-sm text-muted-foreground">
+              หน้า {page} / {totalPages}
+            </p>
+            <Button type="button" variant="outline" disabled={page >= totalPages || itemsLoading} onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}>
+              ถัดไป
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -262,5 +529,13 @@ export default function StorePage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+export default function StorePage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-muted-foreground">กำลังโหลดหน้า...</div>}>
+      <StorePageContent />
+    </Suspense>
   );
 }

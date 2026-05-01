@@ -6,6 +6,9 @@ type StoreTransactionFilters = {
   endDate?: Date;
   transactionType?: TransactionType;
   categoryId?: string;
+  search?: string;
+  sortBy?: "billDate" | "totalPrice" | "productName";
+  sortOrder?: "asc" | "desc";
   limit?: number;
   offset?: number;
 };
@@ -31,29 +34,75 @@ export class StoreTransactionRepository {
   }
 
   async findAll(filters: StoreTransactionFilters) {
-    const { startDate, endDate, transactionType, categoryId, limit = 20, offset = 0 } = filters;
-    return prisma.storeTransaction.findMany({
-      where: {
-        transactionType,
-        billDate: {
-          gte: startDate,
-          lte: endDate
-        },
-        product: {
-          categoryId
-        }
+    const {
+      startDate,
+      endDate,
+      transactionType,
+      categoryId,
+      search,
+      sortBy = "billDate",
+      sortOrder = "desc",
+      limit = 20,
+      offset = 0
+    } = filters;
+
+    const where: Prisma.StoreTransactionWhereInput = {
+      transactionType,
+      billDate: {
+        gte: startDate,
+        lte: endDate
       },
-      include: {
-        product: {
-          include: {
-            category: true
+      product: {
+        categoryId
+      }
+    };
+
+    if (search) {
+      where.OR = [
+        {
+          product: {
+            name: {
+              contains: search,
+              mode: "insensitive"
+            }
+          }
+        },
+        {
+          product: {
+            category: {
+              name: {
+                contains: search,
+                mode: "insensitive"
+              }
+            }
           }
         }
-      },
-      orderBy: { billDate: "desc" },
-      take: limit,
-      skip: offset
-    });
+      ];
+    }
+
+    const orderBy: Prisma.StoreTransactionOrderByWithRelationInput =
+      sortBy === "productName"
+        ? { product: { name: sortOrder } }
+        : { [sortBy]: sortOrder };
+
+    const [items, total] = await prisma.$transaction([
+      prisma.storeTransaction.findMany({
+        where,
+        include: {
+          product: {
+            include: {
+              category: true
+            }
+          }
+        },
+        orderBy,
+        take: limit,
+        skip: offset
+      }),
+      prisma.storeTransaction.count({ where })
+    ]);
+
+    return { items, total, limit, offset };
   }
 
   async updateById(

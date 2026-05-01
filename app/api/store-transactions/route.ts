@@ -24,8 +24,8 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = Object.fromEntries(request.nextUrl.searchParams.entries());
     const query = listStoreTransactionQuerySchema.parse(searchParams);
-    const items = await service.listStoreTransactions(query);
-    return NextResponse.json(toPlainJson(items));
+    const result = await service.listStoreTransactions(query);
+    return NextResponse.json(toPlainJson(result));
   } catch (error) {
     return handleApiError(error);
   }

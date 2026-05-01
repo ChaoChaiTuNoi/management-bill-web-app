@@ -29,6 +29,8 @@ export default function MasterDataPage() {
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<ProductItem | null>(null);
   const [editValues, setEditValues] = useState({ name: "", categoryId: "" });
+  const [message, setMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   async function loadData() {
     const [categoriesRes, productsRes] = await Promise.all([
@@ -45,32 +47,48 @@ export default function MasterDataPage() {
 
   async function handleEditSave() {
     if (!editingProduct) return;
+    setErrorMessage("");
     const response = await fetch(`/api/master-data/products/${editingProduct.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(editValues)
     });
-    if (!response.ok) return;
+    if (!response.ok) {
+      setErrorMessage("ไม่สามารถแก้ไขสินค้าได้");
+      return;
+    }
+    setMessage("แก้ไขสินค้าเรียบร้อย");
     setEditingProduct(null);
     loadData();
   }
 
   async function handleDeleteConfirm() {
     if (!deletingProduct) return;
+    setErrorMessage("");
     const response = await fetch(`/api/master-data/products/${deletingProduct.id}`, { method: "DELETE" });
-    if (!response.ok) return;
+    if (!response.ok) {
+      setErrorMessage("ไม่สามารถลบสินค้าได้");
+      return;
+    }
+    setMessage("ลบสินค้าเรียบร้อย");
     setDeletingProduct(null);
     loadData();
   }
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold sm:text-3xl">ข้อมูลหลัก</h1>
-        <p className="text-sm text-muted-foreground">จัดการหมวดหมู่และสินค้าเพื่อใช้งานในทุกโมดูล</p>
+      <div className="page-hero">
+        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Master Data</p>
+        <h1 className="mt-2 text-2xl font-bold sm:text-3xl">ข้อมูลหลัก</h1>
+        <p className="mt-1 text-sm text-muted-foreground">จัดการหมวดหมู่และสินค้าเพื่อใช้งานในทุกโมดูล</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">หมวดหมู่ทั้งหมด</p><p className="mt-1 text-2xl font-semibold">{categories.length}</p></CardContent></Card>
+        <Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">สินค้าทั้งหมด</p><p className="mt-1 text-2xl font-semibold">{products.length}</p></CardContent></Card>
+        <Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">พร้อมใช้งานในโมดูล</p><p className="mt-1 text-sm font-medium text-emerald-700">Factory / Store / Dashboard</p></CardContent></Card>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+        <Card className="border-white/80">
           <CardHeader>
             <CardTitle>เพิ่มหมวดหมู่</CardTitle>
           </CardHeader>
@@ -87,12 +105,15 @@ export default function MasterDataPage() {
             <Button
               className="w-full md:w-auto"
               onClick={async () => {
+                setMessage("");
+                setErrorMessage("");
                 await fetch("/api/master-data/categories", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ name: categoryName })
                 });
                 setCategoryName("");
+                setMessage("บันทึกหมวดหมู่เรียบร้อย");
                 loadData();
               }}
             >
@@ -101,7 +122,7 @@ export default function MasterDataPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-white/80">
           <CardHeader>
             <CardTitle>เพิ่มสินค้า</CardTitle>
           </CardHeader>
@@ -134,6 +155,8 @@ export default function MasterDataPage() {
             <Button
               className="w-full md:w-auto"
               onClick={async () => {
+                setMessage("");
+                setErrorMessage("");
                 await fetch("/api/master-data/products", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -141,6 +164,7 @@ export default function MasterDataPage() {
                 });
                 setProductName("");
                 setCategoryId("");
+                setMessage("บันทึกสินค้าเรียบร้อย");
                 loadData();
               }}
             >
@@ -149,8 +173,14 @@ export default function MasterDataPage() {
           </CardContent>
         </Card>
       </div>
+      {message ? (
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p>
+      ) : null}
+      {errorMessage ? (
+        <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errorMessage}</p>
+      ) : null}
 
-      <Card>
+      <Card className="border-white/80">
         <CardHeader>
           <CardTitle>รายการสินค้า</CardTitle>
         </CardHeader>
@@ -166,7 +196,7 @@ export default function MasterDataPage() {
             <TableBody>
               {products.map((product) => (
                 <TableRow key={product.id}>
-                  <TableCell>{product.name}</TableCell>
+                  <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell>{product.category?.name ?? "-"}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">

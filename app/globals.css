@@ -29,6 +29,27 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+select {
+  @apply h-11 w-full rounded-xl border border-slate-200 bg-white/95 px-3 text-sm shadow-sm transition;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:border-blue-300;
+}
+
+.page-hero {
+  @apply relative overflow-hidden rounded-2xl border border-white/80 bg-white/75 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.10)] backdrop-blur-sm sm:p-6;
+}
+
+.page-hero::before {
+  content: "";
+  position: absolute;
+  top: -40px;
+  right: -30px;
+  width: 220px;
+  height: 120px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.22), rgba(59, 130, 246, 0));
+  pointer-events: none;
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }
